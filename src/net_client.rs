@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use pyo3::{
     exceptions::PyRuntimeError,
@@ -9,7 +6,7 @@ use pyo3::{
     types::{PyBytes, PyList},
 };
 use steamworks::{
-    networking_messages::SessionRequest,
+    networking_messages::NetworkingMessages,
     networking_types::{NetworkingIdentity, SendFlags},
     Client, ClientManager, LobbyChatUpdate, LobbyId, LobbyType, SingleClient, SteamId,
 };
@@ -17,12 +14,10 @@ use steamworks::{
 #[pyclass(unsendable)]
 pub struct PySteamClient {
     client: Option<(Client, SingleClient)>,
-    cb_conn_request: Arc<Mutex<Option<Py<PyAny>>>>,
+    messages: Option<NetworkingMessages<ClientManager>>,
     cb_conn_failed: Arc<Mutex<Option<Py<PyAny>>>>,
     cb_lobby_changed: Arc<Mutex<Option<Py<PyAny>>>>,
     cb_message_recv: Arc<Mutex<Option<Py<PyAny>>>>,
-    //store pending session requests
-    pending_requests: Arc<Mutex<HashMap<u64, SessionRequest<ClientManager>>>>,
 }
 
 #[pymethods]
@@ -31,11 +26,10 @@ impl PySteamClient {
     pub fn new() -> Self {
         PySteamClient {
             client: None,
-            cb_conn_request: Arc::new(Mutex::new(None)),
+            messages: None,
             cb_conn_failed: Arc::new(Mutex::new(None)),
             cb_lobby_changed: Arc::new(Mutex::new(None)),
             cb_message_recv: Arc::new(Mutex::new(None)),
-            pending_requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -59,41 +53,23 @@ impl PySteamClient {
                     });
                 });
 
-                let pending_requests_clone = self.pending_requests.clone();
-                let cb_connection_req_shared = self.cb_conn_request.clone();
-                client
-                    .networking_messages()
-                    .session_request_callback(move |req| {
-                        let steam_id_raw = req.remote().steam_id().unwrap().raw();
-
-                        // Store the session request in the hashmap
-                        pending_requests_clone
-                            .lock()
-                            .unwrap()
-                            .insert(steam_id_raw, req);
-
-                        Python::with_gil(|py| {
-                            if let Some(cb) = &*cb_connection_req_shared.lock().unwrap() {
-                                let _ = cb.call1(py, (steam_id_raw,));
-                            }
-                        });
-                    });
-
+                let networking = client.networking_messages();
                 let cb_connection_failed_shared = self.cb_conn_failed.clone();
-                client
-                    .networking_messages()
-                    .session_failed_callback(move |info| {
-                        Python::with_gil(|py| {
-                            if let Some(cb) = &*cb_connection_failed_shared.lock().unwrap() {
-                                let _ = cb.call1(
-                                    py,
-                                    (info.identity_remote().unwrap().steam_id().unwrap().raw(),),
-                                );
-                            }
-                        });
+                networking.session_failed_callback(move |info| {
+                    Python::with_gil(|py| {
+                        if let Some(cb) = &*cb_connection_failed_shared.lock().unwrap() {
+                            let _ = cb.call1(
+                                py,
+                                (
+                                    info.identity_remote().unwrap().steam_id().unwrap().raw(),
+                                ),
+                            );
+                        }
                     });
+                });
 
                 self.client = Some((client, single));
+                self.messages = Some(networking);
                 Ok(())
             }
             Err(e) => Err(PyRuntimeError::new_err(e.to_string())),
@@ -115,11 +91,8 @@ impl PySteamClient {
     }
 
     pub fn receive_messages(&self, channel: u32, max_messages: usize) {
-        if let Some(client) = &self.client {
-            for message in client
-                .0
-                .networking_messages()
-                .receive_messages_on_channel(channel, max_messages)
+        if let Some(messages) = &self.messages {
+            for message in messages.receive_messages_on_channel(channel, max_messages)
             {
                 Python::with_gil(|py| {
                     if let Some(cb) = &*self.cb_message_recv.lock().unwrap() {
@@ -213,11 +186,6 @@ impl PySteamClient {
         *guard = Some(cb);
     }
 
-    pub fn set_connection_request_callback(&mut self, cb: Py<PyAny>) {
-        let mut guard = self.cb_conn_request.lock().unwrap();
-        *guard = Some(cb);
-    }
-
     pub fn set_connection_failed_callback(&mut self, cb: Py<PyAny>) {
         let mut guard = self.cb_conn_failed.lock().unwrap();
         *guard = Some(cb);
@@ -235,11 +203,9 @@ impl PySteamClient {
         channel: u32,
         message: &[u8],
     ) {
-        if let Some((client, _)) = &self.client {
-            let networking = client.networking_messages();
-
-            let flags = SendFlags::from_bits(message_type).unwrap_or(SendFlags::UNRELIABLE);
-
+        if let Some(networking) = &self.messages {
+            let flags = SendFlags::from_bits(message_type).unwrap_or(SendFlags::RELIABLE);
+            println!("Sending message to {}", steam_id);
             let _ = networking.send_message_to_user(
                 NetworkingIdentity::new_steam_id(SteamId::from_raw(steam_id)),
                 flags,
@@ -249,17 +215,11 @@ impl PySteamClient {
         }
     }
 
-    pub fn accept_connection(&mut self, steam_id: u64) {
-        let mut pending = self.pending_requests.lock().unwrap();
-        if let Some(req) = pending.remove(&steam_id) {
-            req.accept();
-        }
-    }
-
-    pub fn reject_connection(&mut self, steam_id: u64) {
-        let mut pending = self.pending_requests.lock().unwrap();
-        if let Some(req) = pending.remove(&steam_id) {
-            req.reject();
+    pub fn own_steam_id(&self) -> u64 {
+        if let Some((client, _)) = &self.client {
+            client.user().steam_id().raw()
+        } else {
+            0
         }
     }
 }

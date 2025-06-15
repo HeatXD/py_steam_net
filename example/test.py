@@ -19,12 +19,11 @@ class SteamApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Steam Client Demo")
-        self.geometry("700x460")  # wider to fit chat box on the right
+        self.geometry("700x460")
 
         self.client = py_steam_net.PySteamClient()
         self.current_lobby_id = None
 
-        # Left UI (lobby management)
         left_frame = tk.Frame(self)
         left_frame.pack(side='left', fill='y', padx=10, pady=10)
 
@@ -33,7 +32,7 @@ class SteamApp(tk.Tk):
 
         btn_init = tk.Button(left_frame, text="Init Client", command=self.init_client)
         btn_init.pack(fill='x')
-        
+
         btn_deinit = tk.Button(left_frame, text="Deinit Client", command=self.deinit_client)
         btn_deinit.pack(fill='x', pady=10)
 
@@ -60,7 +59,6 @@ class SteamApp(tk.Tk):
         self.members_text = tk.Text(left_frame, height=8, state='disabled', width=30)
         self.members_text.pack(fill='both', pady=(0,10))
 
-        # Right UI (chat)
         right_frame = tk.Frame(self)
         right_frame.pack(side='right', fill='both', expand=True, padx=10, pady=10)
 
@@ -78,8 +76,7 @@ class SteamApp(tk.Tk):
         btn_send = tk.Button(input_frame, text="Send to Lobby", command=self.send_chat_to_all)
         btn_send.pack(side='right', padx=(5,0))
 
-        # Start the callback loop
-        self.after(16, self.callback_loop)
+        self.after(10, self.callback_loop)
 
     def update_status(self):
         ready = self.client.is_ready()
@@ -87,17 +84,15 @@ class SteamApp(tk.Tk):
 
     def init_client(self):
         try:
-            self.client.init(480)  # Example AppID
+            self.client.init(480)
             self.update_status()
 
-            # Lobby changed callback
             def lobby_changed_callback(lobby_id, user_changed, making_change, member_state_change):
                 if self.current_lobby_id == lobby_id:
                     self.update_lobby_members()
 
             self.client.set_lobby_changed_callback(lobby_changed_callback)
 
-            # NEW: Register message received callback
             def on_message_received(sender_steam_id, msg_bytes):
                 try:
                     msg = msg_bytes.decode('utf-8', errors='replace')
@@ -106,6 +101,11 @@ class SteamApp(tk.Tk):
                 self.append_chat(f"[{sender_steam_id}] {msg}")
 
             self.client.set_message_recv_callback(on_message_received)
+
+            def on_connection_failed(steam_id, reason):
+                messagebox.showerror("Connection Failed", f"Connection failed for {steam_id} {reason}")
+
+            self.client.set_connection_failed_callback(on_connection_failed)
 
             messagebox.showinfo("Info", "Client initialized!")
         except Exception as e:
@@ -201,15 +201,14 @@ class SteamApp(tk.Tk):
             return
 
         try:
+            my_id = self.client.own_steam_id()
             members = self.client.get_lobby_members(self.current_lobby_id)
-            # Send to each member individually
             for member_steam_id in members:
-                # Send reliable (message_type=2)
+                if member_steam_id == my_id:
+                    continue
                 self.client.send_message_to(member_steam_id, 2, 0, msg.encode('utf-8'))
 
-            # Add to local chat box as self message
             self.append_chat(f"[You] {msg}")
-
             self.chat_entry.delete(0, tk.END)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to send message: {e}")
@@ -223,6 +222,7 @@ class SteamApp(tk.Tk):
     def callback_loop(self):
         if self.client.is_ready():
             self.client.run_callbacks()
+            self.client.receive_messages(0, 100)
         self.after(16, self.callback_loop)
 
     def deinit_client(self):
@@ -243,7 +243,6 @@ class SteamApp(tk.Tk):
 
     def copy_lobby_id(self):
         lobby_id_text = self.lobby_id_label.cget("text")
-        # Extract just the ID number after "Lobby ID: " or "Joined Lobby ID: "
         parts = lobby_id_text.split(": ")
         if len(parts) == 2 and parts[1] != "None":
             lobby_id = parts[1]
