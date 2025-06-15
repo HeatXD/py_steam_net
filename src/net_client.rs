@@ -205,7 +205,7 @@ impl PySteamClient {
     ) {
         if let Some(networking) = &self.messages {
             let flags = SendFlags::from_bits(message_type).unwrap_or(SendFlags::RELIABLE);
-            println!("Sending message to {}", steam_id);
+            //println!("Sending message to {}", steam_id);
             let _ = networking.send_message_to_user(
                 NetworkingIdentity::new_steam_id(SteamId::from_raw(steam_id)),
                 flags,
