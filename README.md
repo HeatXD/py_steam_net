@@ -46,7 +46,7 @@ Python bindings for Steamworks networking lobbies and messages. This library ena
 
 ### Installation
 
-`py_steam_net` is not yet available on PyPI. However, pre-built wheels for various platforms are available in the [GitHub Releases](https://github.com/your-username/py_steam_net/releases) section of the repository. You can download the appropriate wheel file for your system and install it using pip:
+`py_steam_net` is not yet available on PyPI. However, pre-built wheels for various platforms are available in the [GitHub Releases](https://github.com/heatxd/py_steam_net/releases) section of the repository. You can download the appropriate wheel file for your system and install it using pip:
 
 ```bash
 pip install py_steam_net-x.y.z-cpXX-cpXX-your_platform.whl
