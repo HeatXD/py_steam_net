@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.25.1"
-steamworks = { git = "https://github.com/Noxime/steamworks-rs.git", branch = "master", package = "steamworks" }
+steamworks = "0.11.0"
