@@ -58,7 +58,7 @@ Requires `maturin`:
 
 ```bash
 # Clone the repository
-git clone [https://github.com/your-username/py_steam_net.git](https://github.com/your-username/py_steam_net.git) # Replace with actual repo URL
+git clone https://github.com/HeatXD/py_steam_net.git # Replace with actual repo URL
 cd py_steam_net
 
 # Install maturin
