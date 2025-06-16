@@ -1,6 +1,6 @@
 # py_steam_net
 
-Python bindings for Steamworks networking lobbies and messages. This library enables interaction with Steam lobbies and messaging from Python applications, utilizing Rust via [pyo3](https://pyo3.rs/) and the [steamworks-rs](https://docs.rs/steamworks/latest/steamworks/) crate, and built with [Maturin](https://www.maturin.rs/).
+Python bindings for Steamworks networking lobbies and messages. This library enables interaction with Steam lobbies and messaging from Python applications, utilizing Rust via [pyo3](https://github.com/PyO3/pyo3) and the [steamworks-rs](https://github.com/Noxime/steamworks-rs) crate, and built with [Maturin](https://github.com/PyO3/maturin).
 
 ---
 
