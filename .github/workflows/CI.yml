@@ -12,7 +12,8 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write # Changed to 'write' for releasing to GitHub
+  id-token: write # Still needed for OIDC/provenance, etc.
 
 jobs:
   windows:
@@ -84,25 +85,33 @@ jobs:
           path: dist
 
   release:
-    name: Release
+    name: GitHub Release
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
-    needs: [windows, macos, sdist]
+    needs: [windows, macos, sdist] # Updated to only depend on windows, macos, and sdist
     permissions:
-      id-token: write # Use to sign the release artifacts
-      contents: write # Used to upload release artifacts
-      attestations: write # Used to generate artifact attestation
+      contents: write # Needed to create and upload assets to a GitHub Release
+      id-token: write # For attestations/OIDC
+      attestations: write # For build provenance
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4 # Download all artifacts built in previous jobs
+
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: 'wheels-*/*'
-      - name: Publish to PyPI
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: PyO3/maturin-action@v1
-        env:
-          MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+          subject-path: 'wheels-*/*' # Collect all wheels from downloaded artifacts for attestation
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
         with:
-          command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          tag_name: ${{ github.ref_name }} # Use the tag name as the release tag
+          name: Release ${{ github.ref_name }} # Name of the release
+          body: |
+            ## Release ${{ github.ref_name }}
+
+            This is an automated release. See changelog for details.
+          draft: false # Set to true to create a draft release
+          prerelease: ${{ contains(github.ref_name, '-') }} # Auto-detect prereleases by '-' in tag
+          files: |
+            wheels-*/* # Upload all downloaded wheels as release assets
