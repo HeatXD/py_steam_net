@@ -60,9 +60,7 @@ impl PySteamClient {
                         if let Some(cb) = &*cb_connection_failed_shared.lock().unwrap() {
                             let _ = cb.call1(
                                 py,
-                                (
-                                    info.identity_remote().unwrap().steam_id().unwrap().raw(),
-                                ),
+                                (info.identity_remote().unwrap().steam_id().unwrap().raw(),),
                             );
                         }
                     });
@@ -92,19 +90,25 @@ impl PySteamClient {
 
     pub fn receive_messages(&self, channel: u32, max_messages: usize) {
         if let Some(messages) = &self.messages {
-            for message in messages.receive_messages_on_channel(channel, max_messages)
-            {
-                Python::with_gil(|py| {
-                    if let Some(cb) = &*self.cb_message_recv.lock().unwrap() {
-                        // Extract sender steam id and message data
-                        let steam_id = message.identity_peer().steam_id().unwrap().raw();
-                        let data = message.data();
-
-                        // Call Python callback: cb(steam_id: int, data: bytes)
-                        let _ = cb.call1(py, (steam_id, PyBytes::new(py, data)));
+            let received_messages: Vec<(u64, u32, Vec<u8>)> = messages
+                .receive_messages_on_channel(channel, max_messages)
+                .into_iter()
+                .filter_map(|message| {
+                    if let Some(steam_id_identity) = message.identity_peer().steam_id() {
+                        Some((steam_id_identity.raw(), channel, message.data().to_vec()))
+                    } else {
+                        None
                     }
-                });
-            }
+                })
+                .collect();
+
+            Python::with_gil(|py| {
+                if let Some(cb) = &*self.cb_message_recv.lock().unwrap() {
+                    for (steam_id, ch, data) in received_messages {
+                        let _ = cb.call1(py, (steam_id, ch, PyBytes::new(py, &data)));
+                    }
+                }
+            });
         }
     }
 
@@ -197,7 +201,7 @@ impl PySteamClient {
     }
 
     pub fn send_message_to(
-        &mut self,
+        &self,
         steam_id: u64,
         message_type: i32,
         channel: u32,
@@ -205,7 +209,6 @@ impl PySteamClient {
     ) {
         if let Some(networking) = &self.messages {
             let flags = SendFlags::from_bits(message_type).unwrap_or(SendFlags::RELIABLE);
-            //println!("Sending message to {}", steam_id);
             let _ = networking.send_message_to_user(
                 NetworkingIdentity::new_steam_id(SteamId::from_raw(steam_id)),
                 flags,
